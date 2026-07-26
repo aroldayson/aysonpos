@@ -2,6 +2,7 @@
 
 import type { Product } from "@/lib/types";
 import { formatCurrency } from "@/lib/pos-utils";
+import { isManualPriceProduct } from "@/lib/product-catalog";
 
 interface ProductGridProps {
   products: Product[];
@@ -61,7 +62,7 @@ export function ProductGrid({
           >
             <span className="line-clamp-3 text-sm font-bold leading-snug sm:text-base">{product.name}</span>
             <span className="mt-1 shrink-0 rounded-full bg-black/35 px-2.5 py-0.5 text-sm font-bold">
-              {formatCurrency(product.price)}
+              {isManualPriceProduct(product) ? "Manual" : formatCurrency(product.price)}
             </span>
           </button>
         ))}

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { Product } from "@/lib/types";
 import { formatCurrency } from "@/lib/pos-utils";
+import { isManualPriceProduct } from "@/lib/product-catalog";
 interface SearchModalProps {
   open: boolean;
   onClose: () => void;
@@ -65,9 +66,13 @@ export function SearchModal({ open, onClose, onSelect, products }: SearchModalPr
                 >
                   <div>
                     <p className="font-semibold text-slate-900">{product.name}</p>
-                    <p className="text-sm text-slate-600">{product.barcode}</p>
+                    <p className="text-sm text-slate-600">
+                      {isManualPriceProduct(product) ? "Manual price at sale" : product.barcode}
+                    </p>
                   </div>
-                  <span className="font-bold text-slate-800">{formatCurrency(product.price)}</span>
+                  <span className="font-bold text-slate-800">
+                    {isManualPriceProduct(product) ? "Manual" : formatCurrency(product.price)}
+                  </span>
                 </button>
               </li>
             ))

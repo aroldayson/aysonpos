@@ -75,15 +75,18 @@ export async function addCustomProduct(
     DEFAULT_PRODUCTS.find((p) => p.category === input.category)?.color ??
     "#64748b";
 
-  const barcodes = existingProducts.map((p) => p.barcode);
+  const barcodes = existingProducts.map((p) => p.barcode).filter(Boolean);
+  const useBarcode = input.useBarcode !== false;
   const product: Product = {
     id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     name: input.name.trim().toUpperCase(),
-    price: input.price,
+    price: useBarcode ? input.price : 0,
     category: input.category,
-    barcode: input.barcode
-      ? assignProductBarcode(barcodes, input.barcode)
-      : generateProductBarcode(barcodes),
+    barcode: useBarcode
+      ? input.barcode
+        ? assignProductBarcode(barcodes, input.barcode)
+        : generateProductBarcode(barcodes)
+      : "",
     color: categoryColor,
   };
 

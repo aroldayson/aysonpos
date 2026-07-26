@@ -57,7 +57,7 @@ export function WebcamScanPanel({ active, onScan, onClose }: WebcamScanPanelProp
           videoRef={videoRef}
           active={active}
           isConnected={isConnected}
-          className="sm:max-w-xs"
+          className="w-full sm:max-w-md lg:max-w-xl"
         >
           {needsPermission && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80 p-4">
@@ -85,8 +85,7 @@ export function WebcamScanPanel({ active, onScan, onClose }: WebcamScanPanelProp
 
           {!error && isConnected && (
             <p className="text-sm text-slate-100">
-              Hold the barcode in the green box. Rotate your phone — the camera adjusts
-              automatically.
+              Align the barcode inside the green box — same size as your printed label.
             </p>
           )}
 

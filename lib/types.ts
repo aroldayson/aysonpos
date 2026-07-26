@@ -46,7 +46,7 @@ export interface SaleRecord {
   createdAt: number;
 }
 
-export type KeypadMode = "qty" | "cash";
+export type KeypadMode = "qty" | "price" | "cash";
 
 export interface PosSession {
   items: CartItem[];

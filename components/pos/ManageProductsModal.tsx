@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { CategoryId, Product } from "@/lib/types";
 import { CATEGORIES } from "@/lib/products";
 import type { EditProductInput } from "@/lib/product-catalog";
+import { isManualPriceProduct } from "@/lib/product-catalog";
 import { formatCurrency } from "@/lib/pos-utils";
 import { BarcodeDisplay } from "./BarcodeDisplay";
 
@@ -73,8 +74,10 @@ export function ManageProductsModal({
     }
 
     if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
-      setError("Enter a valid price greater than zero.");
-      return;
+      if (!isManualPriceProduct(editing)) {
+        setError("Enter a valid price greater than zero.");
+        return;
+      }
     }
 
     setBusyId(editing.id);
@@ -82,7 +85,7 @@ export function ManageProductsModal({
       const categoryMeta = CATEGORIES.find((c) => c.id === category);
       await onEdit(editing.id, {
         name: trimmedName,
-        price: parsedPrice,
+        price: isManualPriceProduct(editing) ? 0 : parsedPrice,
         category,
         color: categoryMeta?.color,
       });
@@ -146,17 +149,21 @@ export function ManageProductsModal({
             </div>
 
             <div>
-              <label className="pos-label pos-label-dark mb-1 block">
-                Price
-              </label>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                className="pos-input min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
-              />
+              <label className="pos-label pos-label-dark mb-1 block">Price</label>
+              {isManualPriceProduct(editing) ? (
+                <p className="rounded-lg bg-slate-100 px-3 py-3 text-sm text-slate-700">
+                  Price is entered on the POS keypad when this item is sold.
+                </p>
+              ) : (
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  className="pos-input min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+                />
+              )}
             </div>
 
             <div>
@@ -177,11 +184,19 @@ export function ManageProductsModal({
             </div>
 
             <div>
-              <label className="pos-label pos-label-dark mb-2 block">
-                Barcode
-              </label>
-              <BarcodeDisplay value={editing.barcode} />
-              <p className="mt-2 text-center font-mono text-base font-semibold text-slate-800">{editing.barcode}</p>
+              <label className="pos-label pos-label-dark mb-2 block">Barcode</label>
+              {isManualPriceProduct(editing) ? (
+                <p className="rounded-lg bg-amber-50 px-3 py-3 text-sm font-medium text-amber-900 ring-1 ring-amber-200">
+                  No barcode — enter price manually at sale
+                </p>
+              ) : (
+                <>
+                  <BarcodeDisplay value={editing.barcode} />
+                  <p className="mt-2 text-center font-mono text-base font-semibold text-slate-800">
+                    {editing.barcode}
+                  </p>
+                </>
+              )}
             </div>
 
             {error && <p className="text-sm text-red-600">{error}</p>}
@@ -230,10 +245,16 @@ export function ManageProductsModal({
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-semibold text-slate-900">{product.name}</p>
                           <p className="text-sm text-slate-600">{categoryLabel}</p>
-                          <p className="mt-1 font-mono text-sm text-slate-700">{product.barcode}</p>
+                          <p className="mt-1 text-sm text-slate-600">
+                            {isManualPriceProduct(product)
+                              ? "Manual price at sale"
+                              : product.barcode}
+                          </p>
                         </div>
                         <p className="shrink-0 text-base font-bold text-slate-900">
-                          {formatCurrency(product.price)}
+                          {isManualPriceProduct(product)
+                            ? "Manual"
+                            : formatCurrency(product.price)}
                         </p>
                       </div>
 

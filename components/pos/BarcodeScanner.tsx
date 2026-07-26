@@ -87,7 +87,8 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
 
           {isConnected && (
             <p className="text-sm text-slate-100">
-              Scanning continuously — rotate your phone and the preview adjusts automatically.
+              Each scan adds 1 to cart automatically. Scan the same barcode again to add
+              more, or scan different products in a row.
             </p>
           )}
 

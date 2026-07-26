@@ -6,6 +6,7 @@ interface KeypadPanelProps {
   keypadValue: string;
   keypadMode: KeypadMode;
   selectedItemId: string | null;
+  pendingManualProductName?: string | null;
   onKeypadModeChange: (mode: KeypadMode) => void;
   onDigit: (digit: string) => void;
   onClear: () => void;
@@ -25,6 +26,7 @@ export function KeypadPanel({
   keypadValue,
   keypadMode,
   selectedItemId,
+  pendingManualProductName,
   onKeypadModeChange,
   onDigit,
   onClear,
@@ -43,14 +45,16 @@ export function KeypadPanel({
     >
       <div className="border-b border-white/10 p-3">
         <div className="mb-2 flex gap-1.5 rounded-xl bg-black/20 p-1">
-          {(["qty", "cash"] as KeypadMode[]).map((mode) => (
+          {(["qty", "price", "cash"] as KeypadMode[]).map((mode) => (
             <button
               key={mode}
               type="button"
               onClick={() => onKeypadModeChange(mode)}
-              className={`pos-btn flex-1 rounded-lg py-2 text-sm font-bold uppercase tracking-wider ${
+              className={`pos-btn flex-1 rounded-lg py-2 text-xs font-bold uppercase tracking-wider sm:text-sm ${
                 keypadMode === mode
-                  ? "bg-indigo-500 text-white shadow-md"
+                  ? mode === "price"
+                    ? "bg-amber-500 text-slate-900 shadow-md"
+                    : "bg-indigo-500 text-white shadow-md"
                   : "text-slate-200 hover:bg-white/10 hover:text-white"
               }`}
             >
@@ -64,6 +68,11 @@ export function KeypadPanel({
         {keypadMode === "qty" && selectedItemId && (
           <p className="mt-2 text-center text-xs font-medium text-indigo-200">
             Editing item quantity
+          </p>
+        )}
+        {keypadMode === "price" && pendingManualProductName && (
+          <p className="mt-2 text-center text-xs font-medium text-amber-200">
+            Enter price for {pendingManualProductName}
           </p>
         )}
       </div>

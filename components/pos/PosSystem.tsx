@@ -18,8 +18,8 @@ import { WebcamScanPanel } from "./WebcamScanPanel";
 import { useBarcodeInput } from "./useBarcodeInput";
 import { PrintReceipt } from "./PrintReceipt";
 import { useMounted } from "./useMounted";
-
 import { useLocalDatabase } from "./useLocalDatabase";
+import { isManualPriceProduct } from "@/lib/product-catalog";
 
 export function PosSystem() {
   const mounted = useMounted();
@@ -54,10 +54,12 @@ export function PosSystem() {
   const [webcamPanelOpen, setWebcamPanelOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [addProductOpen, setAddProductOpen] = useState(false);
+  const [addProductPrefillBarcode, setAddProductPrefillBarcode] = useState<string | null>(null);
   const [manageProductsOpen, setManageProductsOpen] = useState(false);
   const [viewOrdersOpen, setViewOrdersOpen] = useState(false);
   const [storageOpen, setStorageOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [pendingManualProduct, setPendingManualProduct] = useState<Product | null>(null);
   const [mobileView, setMobileView] = useState<MobileView>("products");
   const prevCartCount = useRef(0);
   const sessionRestoredRef = useRef(false);
@@ -147,8 +149,47 @@ export function PosSystem() {
     [showToast],
   );
 
+  const addManualPriceProduct = useCallback(
+    (product: Product, unitPrice: number, quantity = 1) => {
+      if (unitPrice <= 0) {
+        showToast("Enter a valid price first");
+        return false;
+      }
+
+      setItems((prev) => mergeCartItem(prev, product, quantity, unitPrice));
+      setPendingManualProduct(null);
+      setKeypadValue("");
+      setKeypadMode("cash");
+      showToast(`Added ${product.name} · ${formatCurrency(unitPrice)}`);
+      return true;
+    },
+    [showToast],
+  );
+
   const handleProductSelect = useCallback(
     (product: Product) => {
+      if (isManualPriceProduct(product)) {
+        const parsedPrice = parseFloat(keypadValue);
+        const hasPrice =
+          Number.isFinite(parsedPrice) &&
+          parsedPrice > 0 &&
+          (keypadMode === "price" || pendingManualProduct?.id === product.id);
+
+        if (hasPrice) {
+          addManualPriceProduct(product, parsedPrice);
+          return;
+        }
+
+        setPendingManualProduct(product);
+        setKeypadMode("price");
+        setKeypadValue("");
+        if (typeof window !== "undefined" && window.innerWidth < 1024) {
+          setMobileView("pay");
+        }
+        showToast(`Enter price for ${product.name}`);
+        return;
+      }
+
       const qty =
         keypadMode === "qty" && keypadValue
           ? Math.max(1, Math.floor(parseFloat(keypadValue) || 1))
@@ -156,28 +197,35 @@ export function PosSystem() {
       addProduct(product, qty);
       setKeypadValue("");
     },
-    [addProduct, keypadMode, keypadValue],
+    [addProduct, addManualPriceProduct, keypadMode, keypadValue, pendingManualProduct, showToast],
   );
 
   const handleBarcodeScan = useCallback(
     (barcode: string) => {
       const product = findProductByBarcode(barcode);
-      if (product) {
-        const qty = keypadMode === "qty" && keypadValue ? parseFloat(keypadValue) || 1 : 1;
-        addProduct(product, Math.max(1, Math.floor(qty)));
-        setKeypadValue("");
-      } else {
-        showToast(`Unknown barcode: ${barcode}`);
+      if (!product) {
+        setAddProductPrefillBarcode(barcode);
+        setAddProductOpen(true);
+        showToast(`Unknown barcode — add product: ${barcode}`);
+        return;
       }
+
+      setItems((prev) => mergeCartItem(prev, product, 1));
+      setCategory(product.category);
+      showToast(`+1 ${product.name}`);
     },
-    [addProduct, findProductByBarcode, keypadMode, keypadValue, showToast],
+    [findProductByBarcode, showToast],
   );
 
   const handleAddProduct = useCallback(
     async (input: Parameters<typeof addCustomProduct>[0]) => {
       const product = await addCustomProduct(input);
       setCategory(product.category);
-      showToast(`Added ${product.name} · ${product.barcode}`);
+      showToast(
+        isManualPriceProduct(product)
+          ? `Added ${product.name} · manual price at sale`
+          : `Added ${product.name} · ${product.barcode}`,
+      );
       return product;
     },
     [addCustomProduct, showToast],
@@ -242,6 +290,12 @@ export function PosSystem() {
   );
 
   const handleKeypadEnter = () => {
+    if (keypadMode === "price" && pendingManualProduct) {
+      const price = parseFloat(keypadValue);
+      addManualPriceProduct(pendingManualProduct, price);
+      return;
+    }
+
     if (keypadMode === "cash") {
       const amount = parseFloat(keypadValue) || 0;
       setCashTendered(amount);
@@ -297,6 +351,7 @@ export function PosSystem() {
   const handleCancelSale = () => {
     setItems([]);
     setSelectedItemId(null);
+    setPendingManualProduct(null);
     setCashTendered(0);
     setKeypadValue("");
     setKeypadMode("cash");
@@ -483,6 +538,7 @@ export function PosSystem() {
           keypadValue={keypadValue}
           keypadMode={keypadMode}
           selectedItemId={selectedItemId}
+          pendingManualProductName={pendingManualProduct?.name ?? null}
           onKeypadModeChange={setKeypadMode}
           onDigit={handleDigit}
           onClear={handleKeypadClear}
@@ -530,7 +586,13 @@ export function PosSystem() {
       <SearchModal
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
-        onSelect={(product) => addProduct(product)}
+        onSelect={(product) => {
+          if (isManualPriceProduct(product)) {
+            handleProductSelect(product);
+            return;
+          }
+          addProduct(product);
+        }}
         products={allProducts}
       />
 
@@ -538,7 +600,11 @@ export function PosSystem() {
         open={addProductOpen}
         defaultCategory={category}
         allProducts={allProducts}
-        onClose={() => setAddProductOpen(false)}
+        initialBarcode={addProductPrefillBarcode ?? undefined}
+        onClose={() => {
+          setAddProductOpen(false);
+          setAddProductPrefillBarcode(null);
+        }}
         onAdd={handleAddProduct}
       />
 

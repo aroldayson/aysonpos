@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
 import {
   getCameraPermission,
@@ -16,13 +16,36 @@ import { useDeviceOrientation } from "./useDeviceOrientation";
 interface UseWebcamBarcodeOptions {
   active: boolean;
   onScan: (barcode: string) => void;
+  /** Min ms before the same barcode can scan again (add +1 again). */
   debounceMs?: number;
+}
+
+function createScanHandler(
+  debounceMs: number,
+  lastScanRef: MutableRefObject<{ code: string; at: number } | null>,
+  setLastScanned: (code: string) => void,
+  onScanRef: MutableRefObject<(barcode: string) => void>,
+) {
+  return (result: { getText: () => string } | undefined) => {
+    if (!result) return;
+
+    const code = normalizeScannedBarcode(result.getText());
+    if (!code) return;
+
+    const now = Date.now();
+    const last = lastScanRef.current;
+    if (last && last.code === code && now - last.at < debounceMs) return;
+
+    lastScanRef.current = { code, at: now };
+    setLastScanned(code);
+    onScanRef.current(code);
+  };
 }
 
 export function useWebcamBarcode({
   active,
   onScan,
-  debounceMs = 2000,
+  debounceMs = 600,
 }: UseWebcamBarcodeOptions) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
@@ -59,23 +82,11 @@ export function useWebcamBarcode({
       const constraints = getScannerVideoConstraints(deviceId || undefined);
 
       try {
+        const onResult = createScanHandler(debounceMs, lastScanRef, setLastScanned, onScanRef);
         const controls = await reader.decodeFromConstraints(
           constraints,
           videoRef.current,
-          (result) => {
-            if (!result) return;
-
-            const code = normalizeScannedBarcode(result.getText());
-            if (!code) return;
-
-            const now = Date.now();
-            const last = lastScanRef.current;
-            if (last && last.code === code && now - last.at < debounceMs) return;
-
-            lastScanRef.current = { code, at: now };
-            setLastScanned(code);
-            onScanRef.current(code);
-          },
+          onResult,
         );
 
         controlsRef.current = controls;
@@ -86,17 +97,7 @@ export function useWebcamBarcode({
             const fallback = await reader.decodeFromVideoDevice(
               deviceId,
               videoRef.current,
-              (result) => {
-                if (!result) return;
-                const code = normalizeScannedBarcode(result.getText());
-                if (!code) return;
-                const now = Date.now();
-                const last = lastScanRef.current;
-                if (last && last.code === code && now - last.at < debounceMs) return;
-                lastScanRef.current = { code, at: now };
-                setLastScanned(code);
-                onScanRef.current(code);
-              },
+              createScanHandler(debounceMs, lastScanRef, setLastScanned, onScanRef),
             );
             controlsRef.current = fallback;
             setStatus("scanning");

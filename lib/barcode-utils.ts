@@ -49,22 +49,45 @@ export function generateProductBarcode(existingBarcodes: string[]): string {
   throw new Error("Unable to generate a unique barcode.");
 }
 
+export function normalizeProductBarcode(raw: string): string {
+  return normalizeScannedBarcode(raw).replace(/\D/g, "");
+}
+
+export function isValidExternalBarcode(barcode: string): boolean {
+  const digits = normalizeProductBarcode(barcode);
+  return digits.length >= 8 && digits.length <= 14;
+}
+
 export function assignProductBarcode(existingBarcodes: string[], barcode: string): string {
-  const normalized = barcode.trim();
-  if (!/^9300601\d{6}$/.test(normalized)) {
+  const normalized = normalizeProductBarcode(barcode);
+  if (!normalized) {
     return generateProductBarcode(existingBarcodes);
   }
 
-  if (existingBarcodes.includes(normalized)) {
-    return generateProductBarcode(existingBarcodes);
+  const isTaken = (code: string) =>
+    existingBarcodes.some((existing) => barcodesMatch(existing, code));
+
+  if (/^9300601\d{6}$/.test(normalized)) {
+    if (isTaken(normalized)) {
+      return generateProductBarcode(existingBarcodes);
+    }
+    reserveSequenceThrough(normalized);
+    return normalized;
   }
 
-  reserveSequenceThrough(normalized);
-  return normalized;
+  if (isValidExternalBarcode(normalized)) {
+    if (isTaken(normalized)) {
+      return generateProductBarcode(existingBarcodes);
+    }
+    return normalized;
+  }
+
+  return generateProductBarcode(existingBarcodes);
 }
 
 export function isValidProductBarcode(barcode: string): boolean {
-  return /^9300601\d{6}$/.test(barcode.trim());
+  const normalized = normalizeProductBarcode(barcode);
+  return /^9300601\d{6}$/.test(normalized) || isValidExternalBarcode(normalized);
 }
 
 /** Clean raw scanner / webcam input. */
@@ -89,6 +112,14 @@ export function getBarcodeLookupKeys(raw: string): string[] {
   const digits = normalized.replace(/\D/g, "");
   if (digits) {
     keys.add(digits);
+
+    if (digits.length === 13 && digits.startsWith("0")) {
+      keys.add(digits.slice(1));
+    }
+    if (digits.length === 12) {
+      keys.add(`0${digits}`);
+    }
+
     if (digits.startsWith(CUSTOM_BARCODE_PREFIX)) {
       if (digits.length === 13) {
         keys.add(digits);
@@ -103,6 +134,7 @@ export function getBarcodeLookupKeys(raw: string): string[] {
 }
 
 export function barcodesMatch(stored: string, scanned: string): boolean {
+  if (!stored.trim()) return false;
   const storedKeys = new Set(getBarcodeLookupKeys(stored));
   return getBarcodeLookupKeys(scanned).some((key) => storedKeys.has(key));
 }

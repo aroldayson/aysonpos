@@ -1,12 +1,12 @@
 "use client";
 
-import type { CartItem } from "@/lib/types";
+import type { CartItem, KeypadMode } from "@/lib/types";
 import { calcSubtotal, formatCurrency } from "@/lib/pos-utils";
 
 interface OrderPanelProps {
   items: CartItem[];
   selectedItemId: string | null;
-  keypadMode: "qty" | "cash";
+  keypadMode: KeypadMode;
   keypadValue: string;
   cashTendered: number;
   onSelectItem: (id: string) => void;

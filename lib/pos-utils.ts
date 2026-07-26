@@ -1,4 +1,5 @@
 import type { CartItem, Product } from "./types";
+import { isManualPriceProduct } from "./product-catalog";
 
 export function formatCurrency(amount: number): string {
   return `₱${amount.toFixed(2)}`;
@@ -22,7 +23,40 @@ export function createCartItem(product: Product, quantity = 1): CartItem {
   };
 }
 
-export function mergeCartItem(items: CartItem[], product: Product, quantity = 1): CartItem[] {
+export function mergeCartItem(
+  items: CartItem[],
+  product: Product,
+  quantity = 1,
+  unitPrice?: number,
+): CartItem[] {
+  const price = unitPrice ?? product.price;
+
+  if (isManualPriceProduct(product)) {
+    if (price <= 0) return items;
+
+    const existing = items.find(
+      (item) => item.productId === product.id && item.price === price,
+    );
+    if (existing) {
+      return items.map((item) =>
+        item.id === existing.id
+          ? { ...item, quantity: item.quantity + quantity }
+          : item,
+      );
+    }
+
+    return [
+      ...items,
+      {
+        id: `${product.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        productId: product.id,
+        name: product.name,
+        price,
+        quantity,
+      },
+    ];
+  }
+
   const existing = items.find((item) => item.productId === product.id);
   if (existing) {
     return items.map((item) =>

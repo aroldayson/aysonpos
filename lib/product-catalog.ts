@@ -7,7 +7,13 @@ export interface NewProductInput {
   price: number;
   category: CategoryId;
   color?: string;
+  /** When false, product is saved without a barcode and price is entered at sale. */
+  useBarcode?: boolean;
   barcode?: string;
+}
+
+export function isManualPriceProduct(product: Product): boolean {
+  return !product.barcode.trim();
 }
 
 export interface EditProductInput {
