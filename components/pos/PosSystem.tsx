@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CartItem, CategoryId, HeldSale, KeypadMode, PosSession, Product } from "@/lib/types";
-import { calcSubtotal, adjustCartItemQuantity, mergeCartItem, removeCartItem, setCartItemQuantity, formatCurrency } from "@/lib/pos-utils";
+import { calcSubtotal, adjustCartItemQuantity, mergeCartItem, removeCartItem, setCartItemQuantity, formatCurrency, calcChange } from "@/lib/pos-utils";
 import { CategoryTabs } from "./CategoryTabs";
 import { OrderPanel } from "./OrderPanel";
 import { ProductGrid } from "./ProductGrid";
@@ -91,6 +91,21 @@ export function PosSystem() {
     setToast(message);
     window.setTimeout(() => setToast(null), 2500);
   }, []);
+
+  const isMobile = useCallback(
+    () => typeof window !== "undefined" && window.innerWidth < 1024,
+    [],
+  );
+
+  const goToCashScreen = useCallback(() => {
+    if (items.length === 0) {
+      showToast("Add items first");
+      return;
+    }
+    setMobileView("pay");
+    setKeypadMode("cash");
+    setKeypadValue("");
+  }, [items.length, showToast]);
 
   useEffect(() => {
     if (!dbReady || sessionRestoredRef.current) return;
@@ -290,16 +305,37 @@ export function PosSystem() {
   );
 
   const handleKeypadEnter = () => {
+    const mobilePay = isMobile() && mobileView === "pay";
+
     if (keypadMode === "price" && pendingManualProduct) {
       const price = parseFloat(keypadValue);
-      addManualPriceProduct(pendingManualProduct, price);
+      if (addManualPriceProduct(pendingManualProduct, price) && mobilePay) {
+        setMobileView("cart");
+      }
       return;
     }
 
     if (keypadMode === "cash") {
-      const amount = parseFloat(keypadValue) || 0;
+      const keypadAmount = parseFloat(keypadValue) || 0;
+      const amount = keypadAmount > 0 ? keypadAmount : cashTendered;
+
+      if (amount <= 0) {
+        goToCashScreen();
+        showToast("Enter cash amount");
+        return;
+      }
+
       setCashTendered(amount);
       setKeypadValue("");
+
+      if (isMobile() && items.length > 0) {
+        setMobileView("cart");
+        showToast(
+          amount >= subtotal
+            ? `Bill ${formatCurrency(subtotal)} · Change ${formatCurrency(calcChange(subtotal, amount))}`
+            : `Need ${formatCurrency(subtotal - amount)} more cash`,
+        );
+      }
       return;
     }
 
@@ -309,8 +345,24 @@ export function PosSystem() {
       setKeypadValue("");
       qtyReplacePendingRef.current = false;
       showToast("Quantity updated");
-    } else if (selectedItemId && keypadMode === "qty") {
+      if (mobilePay) {
+        setMobileView("cart");
+      }
+      return;
+    }
+
+    if (selectedItemId && keypadMode === "qty") {
       showToast("Enter a quantity first");
+      return;
+    }
+
+    if (mobilePay && items.length > 0) {
+      if (cashTendered <= 0 && !keypadValue.trim()) {
+        goToCashScreen();
+        showToast("Enter cash amount");
+      } else {
+        setMobileView("cart");
+      }
     }
   };
 
@@ -388,12 +440,56 @@ export function PosSystem() {
     showToast(held.label);
   };
 
-  const handleCashPayment = async () => {
-    if (items.length === 0) {
-      showToast("No items in sale");
-      return;
-    }
+  const finalizeCashPayment = useCallback(
+    async (tendered: number) => {
+      if (items.length === 0) {
+        showToast("No items in sale");
+        return;
+      }
 
+      if (tendered <= 0) {
+        showToast("Enter cash amount on keypad first");
+        setKeypadMode("cash");
+        goToCashScreen();
+        return;
+      }
+
+      if (tendered < subtotal) {
+        showToast(`Insufficient cash — need ${formatCurrency(subtotal)}`);
+        setKeypadMode("cash");
+        goToCashScreen();
+        return;
+      }
+
+      const change = calcChange(subtotal, tendered);
+      showToast(
+        change > 0
+          ? `Paid ${formatCurrency(subtotal)} — Change ${formatCurrency(change)}`
+          : `Paid ${formatCurrency(subtotal)} — Thank you!`,
+      );
+
+      await recordCompletedSale({
+        id: `sale-${Date.now()}`,
+        items,
+        subtotal,
+        cashTendered: tendered,
+        change,
+        createdAt: Date.now(),
+      });
+
+      setItems([]);
+      setSelectedItemId(null);
+      setPendingManualProduct(null);
+      setCashTendered(0);
+      setKeypadValue("");
+      setKeypadMode("cash");
+      void wipeSession();
+      setMobileView("products");
+    },
+    [items, subtotal, showToast, goToCashScreen, recordCompletedSale, wipeSession],
+  );
+
+  const handleCashPayment = async () => {
     let tendered = cashTendered;
     if (keypadMode === "cash" && keypadValue.trim()) {
       const parsed = parseFloat(keypadValue);
@@ -405,41 +501,37 @@ export function PosSystem() {
     }
 
     if (tendered <= 0) {
-      showToast("Enter cash amount on keypad first");
-      setKeypadMode("cash");
+      goToCashScreen();
+      showToast("Enter cash amount");
       return;
     }
 
     if (tendered < subtotal) {
-      showToast("Insufficient cash — enter amount on keypad");
+      showToast(`Insufficient cash — need ${formatCurrency(subtotal)}`);
       setKeypadMode("cash");
+      goToCashScreen();
       return;
     }
 
-    const change = tendered - subtotal;
-    showToast(
-      change > 0
-        ? `Paid ${formatCurrency(subtotal)} — Change ${formatCurrency(change)}`
-        : `Paid ${formatCurrency(subtotal)} — Thank you!`,
-    );
-
-    await recordCompletedSale({
-      id: `sale-${Date.now()}`,
-      items,
-      subtotal,
-      cashTendered: tendered,
-      change,
-      createdAt: Date.now(),
-    });
-
-    setItems([]);
-    setSelectedItemId(null);
-    setCashTendered(0);
-    setKeypadValue("");
-    setKeypadMode("cash");
-    void wipeSession();
-    setMobileView("products");
+    await finalizeCashPayment(tendered);
   };
+
+  const handleMobileViewChange = useCallback(
+    (view: MobileView) => {
+      if (view === "pay") {
+        if (items.length === 0) {
+          showToast("Add items first");
+          return;
+        }
+        setKeypadMode("cash");
+        if (cashTendered <= 0) {
+          setKeypadValue("");
+        }
+      }
+      setMobileView(view);
+    },
+    [items.length, cashTendered, showToast],
+  );
 
   if (!mounted || !dbReady) {
     return (
@@ -522,6 +614,9 @@ export function PosSystem() {
           onIncreaseQuantity={handleIncreaseQuantity}
           onDecreaseQuantity={handleDecreaseQuantity}
           onRemoveItem={handleRemoveItem}
+          showPaymentActions={mobileView === "cart"}
+          onEnterCash={goToCashScreen}
+          onCompletePayment={() => void finalizeCashPayment(cashTendered)}
           className={mobileView === "cart" ? "flex min-h-0 flex-1" : "hidden lg:flex"}
         />
 
@@ -539,6 +634,8 @@ export function PosSystem() {
           keypadMode={keypadMode}
           selectedItemId={selectedItemId}
           pendingManualProductName={pendingManualProduct?.name ?? null}
+          subtotal={subtotal}
+          cashTendered={cashTendered}
           onKeypadModeChange={setKeypadMode}
           onDigit={handleDigit}
           onClear={handleKeypadClear}
@@ -557,7 +654,7 @@ export function PosSystem() {
         active={mobileView}
         itemCount={cartItemCount}
         subtotal={subtotal}
-        onChange={setMobileView}
+        onChange={handleMobileViewChange}
       />
 
       <footer className="hidden shrink-0 items-center justify-between border-t border-white/5 px-6 py-2 text-sm text-slate-200 lg:flex">
