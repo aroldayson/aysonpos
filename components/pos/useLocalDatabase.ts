@@ -1,18 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CategoryId, HeldSale, Product, SaleRecord } from "@/lib/types";
+import type { CategoryId, HeldSale, PosSession, Product, SaleRecord, StorageSummary } from "@/lib/types";
 import {
   addCustomProduct as addCustomProductToDb,
+  clearPosSession,
   deleteCustomProduct as deleteCustomProductFromDb,
+  exportStorageSnapshot,
   getCustomProducts,
   getHeldSales,
+  getStorageSummary,
+  importStorageSnapshot,
   initLocalDatabase,
+  loadPosSession,
   removeHeldSale,
   saveHeldSale,
+  savePosSession,
   saveSaleRecord,
   updateCustomProduct as updateCustomProductInDb,
-} from "@/lib/db/repository";
+} from "@/lib/db/storage";
 import {
   filterByCategory,
   findInCatalog,
@@ -26,16 +32,35 @@ export function useLocalDatabase() {
   const [error, setError] = useState<string | null>(null);
   const [customProducts, setCustomProducts] = useState<Product[]>([]);
   const [heldSales, setHeldSales] = useState<HeldSale[]>([]);
+  const [savedSession, setSavedSession] = useState<PosSession | null>(null);
+  const [storageSummary, setStorageSummary] = useState<StorageSummary>({
+    productCount: 0,
+    orderCount: 0,
+    heldCount: 0,
+    lastSavedAt: null,
+  });
+
+  const refreshSummary = useCallback(async () => {
+    const summary = await getStorageSummary();
+    setStorageSummary(summary);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
     initLocalDatabase()
       .then(async () => {
-        const [products, held] = await Promise.all([getCustomProducts(), getHeldSales()]);
+        const [products, held, session, summary] = await Promise.all([
+          getCustomProducts(),
+          getHeldSales(),
+          loadPosSession(),
+          getStorageSummary(),
+        ]);
         if (cancelled) return;
         setCustomProducts(products);
         setHeldSales(held);
+        setSavedSession(session);
+        setStorageSummary(summary);
         setReady(true);
       })
       .catch(() => {
@@ -58,24 +83,30 @@ export function useLocalDatabase() {
     async (input: NewProductInput): Promise<Product> => {
       const product = await addCustomProductToDb(input, allProducts);
       setCustomProducts((prev) => [...prev, product]);
+      await refreshSummary();
       return product;
     },
-    [allProducts],
+    [allProducts, refreshSummary],
   );
 
   const updateCustomProduct = useCallback(
     async (id: string, input: EditProductInput): Promise<Product> => {
       const product = await updateCustomProductInDb(id, input);
       setCustomProducts((prev) => prev.map((entry) => (entry.id === id ? product : entry)));
+      await refreshSummary();
       return product;
     },
-    [],
+    [refreshSummary],
   );
 
-  const deleteCustomProduct = useCallback(async (id: string): Promise<void> => {
-    await deleteCustomProductFromDb(id);
-    setCustomProducts((prev) => prev.filter((entry) => entry.id !== id));
-  }, []);
+  const deleteCustomProduct = useCallback(
+    async (id: string): Promise<void> => {
+      await deleteCustomProductFromDb(id);
+      setCustomProducts((prev) => prev.filter((entry) => entry.id !== id));
+      await refreshSummary();
+    },
+    [refreshSummary],
+  );
 
   const findProductByBarcode = useCallback(
     (barcode: string) => findInCatalog(allProducts, barcode),
@@ -87,21 +118,72 @@ export function useLocalDatabase() {
     [allProducts],
   );
 
-  const holdSale = useCallback(async (sale: HeldSale) => {
-    await saveHeldSale(sale);
-    setHeldSales((prev) => [...prev, sale]);
+  const holdSale = useCallback(
+    async (sale: HeldSale) => {
+      await saveHeldSale(sale);
+      setHeldSales((prev) => [...prev, sale]);
+      await refreshSummary();
+    },
+    [refreshSummary],
+  );
+
+  const recallHeldSale = useCallback(
+    async (id: string): Promise<HeldSale | undefined> => {
+      const sale = heldSales.find((entry) => entry.id === id);
+      if (!sale) return undefined;
+      await removeHeldSale(id);
+      setHeldSales((prev) => prev.filter((entry) => entry.id !== id));
+      await refreshSummary();
+      return sale;
+    },
+    [heldSales, refreshSummary],
+  );
+
+  const recordCompletedSale = useCallback(
+    async (sale: SaleRecord) => {
+      await saveSaleRecord(sale);
+      await refreshSummary();
+    },
+    [refreshSummary],
+  );
+
+  const persistSession = useCallback(
+    async (session: PosSession) => {
+      await savePosSession(session);
+      setSavedSession(session);
+      setStorageSummary((prev) => ({ ...prev, lastSavedAt: session.updatedAt }));
+    },
+    [],
+  );
+
+  const wipeSession = useCallback(async () => {
+    await clearPosSession();
+    setSavedSession(null);
+    setStorageSummary((prev) => ({ ...prev, lastSavedAt: null }));
   }, []);
 
-  const recallHeldSale = useCallback(async (id: string): Promise<HeldSale | undefined> => {
-    const sale = heldSales.find((entry) => entry.id === id);
-    if (!sale) return undefined;
-    await removeHeldSale(id);
-    setHeldSales((prev) => prev.filter((entry) => entry.id !== id));
-    return sale;
-  }, [heldSales]);
+  const exportData = useCallback(async () => {
+    return exportStorageSnapshot();
+  }, []);
 
-  const recordCompletedSale = useCallback(async (sale: SaleRecord) => {
-    await saveSaleRecord(sale);
+  const importData = useCallback(async (file: File) => {
+    const text = await file.text();
+    const snapshot = JSON.parse(text);
+    await importStorageSnapshot(snapshot);
+
+    const [products, held, session, summary] = await Promise.all([
+      getCustomProducts(),
+      getHeldSales(),
+      loadPosSession(),
+      getStorageSummary(),
+    ]);
+
+    setCustomProducts(products);
+    setHeldSales(held);
+    setSavedSession(session);
+    setStorageSummary(summary);
+
+    return session;
   }, []);
 
   return {
@@ -110,6 +192,8 @@ export function useLocalDatabase() {
     allProducts,
     customProducts,
     heldSales,
+    savedSession,
+    storageSummary,
     addCustomProduct,
     updateCustomProduct,
     deleteCustomProduct,
@@ -118,5 +202,10 @@ export function useLocalDatabase() {
     holdSale,
     recallHeldSale,
     recordCompletedSale,
+    persistSession,
+    wipeSession,
+    exportData,
+    importData,
+    refreshSummary,
   };
 }

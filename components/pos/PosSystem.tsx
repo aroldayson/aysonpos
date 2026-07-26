@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CartItem, CategoryId, HeldSale, KeypadMode, Product } from "@/lib/types";
+import type { CartItem, CategoryId, HeldSale, KeypadMode, PosSession, Product } from "@/lib/types";
 import { calcSubtotal, adjustCartItemQuantity, mergeCartItem, removeCartItem, setCartItemQuantity, formatCurrency } from "@/lib/pos-utils";
 import { CategoryTabs } from "./CategoryTabs";
 import { OrderPanel } from "./OrderPanel";
@@ -12,6 +12,7 @@ import { SearchModal } from "./SearchModal";
 import { ViewOrdersModal } from "./ViewOrdersModal";
 import { ManageProductsModal } from "./ManageProductsModal";
 import { AddProductModal } from "./AddProductModal";
+import { DataStorageModal } from "./DataStorageModal";
 import { MobileBottomNav, type MobileView } from "./MobileBottomNav";
 import { WebcamScanPanel } from "./WebcamScanPanel";
 import { useBarcodeInput } from "./useBarcodeInput";
@@ -36,6 +37,12 @@ export function PosSystem() {
     holdSale,
     recallHeldSale,
     recordCompletedSale,
+    savedSession,
+    storageSummary,
+    persistSession,
+    wipeSession,
+    exportData,
+    importData,
   } = useLocalDatabase();
   const [category, setCategory] = useState<CategoryId>("spirits");
   const [items, setItems] = useState<CartItem[]>([]);
@@ -49,13 +56,74 @@ export function PosSystem() {
   const [addProductOpen, setAddProductOpen] = useState(false);
   const [manageProductsOpen, setManageProductsOpen] = useState(false);
   const [viewOrdersOpen, setViewOrdersOpen] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<MobileView>("products");
   const prevCartCount = useRef(0);
+  const sessionRestoredRef = useRef(false);
 
   const products = getProductsByCategory(category);
   const subtotal = calcSubtotal(items);
   const cartItemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+
+  const restorePosSession = useCallback((session: PosSession | null) => {
+    if (!session) {
+      setItems([]);
+      setSelectedItemId(null);
+      setCashTendered(0);
+      setKeypadValue("");
+      setKeypadMode("cash");
+      return;
+    }
+
+    setItems(session.items);
+    setSelectedItemId(session.selectedItemId);
+    setCashTendered(session.cashTendered);
+    setKeypadValue(session.keypadValue);
+    setKeypadMode(session.keypadMode);
+    setCategory(session.category);
+  }, []);
+
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(null), 2500);
+  }, []);
+
+  useEffect(() => {
+    if (!dbReady || sessionRestoredRef.current) return;
+    sessionRestoredRef.current = true;
+    if (savedSession?.items.length) {
+      restorePosSession(savedSession);
+      showToast("Restored saved cart");
+    }
+  }, [dbReady, savedSession, restorePosSession, showToast]);
+
+  useEffect(() => {
+    if (!dbReady || !sessionRestoredRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      void persistSession({
+        items,
+        selectedItemId,
+        cashTendered,
+        keypadValue,
+        keypadMode,
+        category,
+        updatedAt: Date.now(),
+      });
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    items,
+    selectedItemId,
+    cashTendered,
+    keypadValue,
+    keypadMode,
+    category,
+    dbReady,
+    persistSession,
+  ]);
 
   useEffect(() => {
     if (prevCartCount.current === 0 && items.length > 0) {
@@ -69,11 +137,6 @@ export function PosSystem() {
       setKeypadMode("cash");
     }
   }, [mobileView]);
-
-  const showToast = useCallback((message: string) => {
-    setToast(message);
-    window.setTimeout(() => setToast(null), 2500);
-  }, []);
 
   const addProduct = useCallback(
     (product: Product, quantity = 1) => {
@@ -106,7 +169,7 @@ export function PosSystem() {
         showToast(`Unknown barcode: ${barcode}`);
       }
     },
-    [addProduct, keypadMode, keypadValue, showToast],
+    [addProduct, findProductByBarcode, keypadMode, keypadValue, showToast],
   );
 
   const handleAddProduct = useCallback(
@@ -137,7 +200,7 @@ export function PosSystem() {
     [customProducts, deleteCustomProduct, showToast],
   );
 
-  useBarcodeInput({ onScan: handleBarcodeScan });
+  useBarcodeInput({ enabled: dbReady, onScan: handleBarcodeScan });
 
   const handleDigit = (digit: string) => {
     if (digit === "." && keypadValue.includes(".")) return;
@@ -201,6 +264,7 @@ export function PosSystem() {
     setCashTendered(0);
     setKeypadValue("");
     setKeypadMode("cash");
+    void wipeSession();
     showToast("Sale cancelled");
   };
 
@@ -229,6 +293,7 @@ export function PosSystem() {
     setCashTendered(0);
     setKeypadValue("");
     setKeypadMode("cash");
+    void wipeSession();
     showToast(held.label);
   };
 
@@ -281,6 +346,7 @@ export function PosSystem() {
     setCashTendered(0);
     setKeypadValue("");
     setKeypadMode("cash");
+    void wipeSession();
     setMobileView("products");
   };
 
@@ -303,6 +369,23 @@ export function PosSystem() {
     );
   }
 
+  const handleExportStorage = async () => {
+    const snapshot = await exportData();
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `ayson-pos-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportStorage = async (file: File) => {
+    const session = await importData(file);
+    restorePosSession(session);
+    showToast("Backup imported");
+  };
+
   return (
     <div className="pos-shell flex h-dvh flex-col overflow-hidden">
       <CategoryTabs
@@ -313,6 +396,7 @@ export function PosSystem() {
         onAddProduct={() => setAddProductOpen(true)}
         onManageProducts={() => setManageProductsOpen(true)}
         onViewOrders={() => setViewOrdersOpen(true)}
+        onOpenStorage={() => setStorageOpen(true)}
       />
 
       <WebcamScanPanel
@@ -382,7 +466,13 @@ export function PosSystem() {
 
       <footer className="hidden shrink-0 items-center justify-between border-t border-white/5 px-6 py-2 text-sm text-slate-200 lg:flex">
         <span className="font-semibold text-white">Ayson POS · Bar & Restaurant</span>
-        <span>Webcam · USB scanner · IndexedDB storage</span>
+        <button
+          type="button"
+          onClick={() => setStorageOpen(true)}
+          className="text-slate-200 underline-offset-2 hover:text-white hover:underline"
+        >
+          {storageSummary.productCount} products · {storageSummary.orderCount} orders saved locally
+        </button>
       </footer>
 
       {toast && (
@@ -427,6 +517,14 @@ export function PosSystem() {
       <ViewOrdersModal
         open={viewOrdersOpen}
         onClose={() => setViewOrdersOpen(false)}
+      />
+
+      <DataStorageModal
+        open={storageOpen}
+        summary={storageSummary}
+        onClose={() => setStorageOpen(false)}
+        onExport={handleExportStorage}
+        onImport={handleImportStorage}
       />
 
       <PrintReceipt items={items} subtotal={subtotal} />

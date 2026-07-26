@@ -11,6 +11,7 @@ interface CategoryTabsProps {
   onAddProduct?: () => void;
   onManageProducts?: () => void;
   onViewOrders?: () => void;
+  onOpenStorage?: () => void;
 }
 
 const ACTION_BTN =
@@ -24,6 +25,7 @@ export function CategoryTabs({
   onAddProduct,
   onManageProducts,
   onViewOrders,
+  onOpenStorage,
 }: CategoryTabsProps) {
   return (
     <header className="pos-glass flex shrink-0 flex-col gap-2 border-b border-white/10 px-3 py-2.5 sm:flex-row sm:items-center">
@@ -67,6 +69,11 @@ export function CategoryTabs({
         {onManageProducts && (
           <button type="button" onClick={onManageProducts} className={`${ACTION_BTN} bg-violet-600/90 text-white shadow-md shadow-violet-900/30 hover:bg-violet-500`}>
             List
+          </button>
+        )}
+        {onOpenStorage && (
+          <button type="button" onClick={onOpenStorage} className={`${ACTION_BTN} bg-white/15 text-white hover:bg-white/20`}>
+            Data
           </button>
         )}
         {onAddProduct && (

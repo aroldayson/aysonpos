@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { normalizeScannedBarcode } from "@/lib/barcode-utils";
 
 interface UseBarcodeInputOptions {
   enabled?: boolean;
@@ -48,7 +49,7 @@ export function useBarcodeInput({
       lastKeyTimeRef.current = now;
 
       if (event.key === "Enter") {
-        const code = bufferRef.current.trim();
+        const code = normalizeScannedBarcode(bufferRef.current);
         bufferRef.current = "";
         if (code.length >= minLength) {
           event.preventDefault();

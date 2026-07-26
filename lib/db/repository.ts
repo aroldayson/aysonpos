@@ -1,4 +1,4 @@
-import type { HeldSale, Product, SaleRecord } from "@/lib/types";
+import type { HeldSale, PosSession, Product, SaleRecord, StorageSnapshot, StorageSummary } from "@/lib/types";
 import { DEFAULT_PRODUCTS } from "@/lib/products";
 import {
   assignProductBarcode,
@@ -149,4 +149,109 @@ export async function removeHeldSale(id: string): Promise<void> {
 
 export async function clearHeldSales(): Promise<void> {
   await db.heldSales.clear();
+}
+
+const SESSION_KEY = "pos-session";
+
+export async function savePosSession(session: PosSession): Promise<void> {
+  await setSetting(SESSION_KEY, JSON.stringify(session));
+}
+
+export async function loadPosSession(): Promise<PosSession | null> {
+  const raw = await getSetting(SESSION_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as PosSession;
+    if (!Array.isArray(parsed.items)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearPosSession(): Promise<void> {
+  await db.settings.delete(SESSION_KEY);
+}
+
+export async function getStorageSummary(): Promise<StorageSummary> {
+  const [productCount, orderCount, heldCount, sessionRaw] = await Promise.all([
+    db.products.count(),
+    db.sales.count(),
+    db.heldSales.count(),
+    getSetting(SESSION_KEY),
+  ]);
+
+  let lastSavedAt: number | null = null;
+  if (sessionRaw) {
+    try {
+      lastSavedAt = (JSON.parse(sessionRaw) as PosSession).updatedAt ?? null;
+    } catch {
+      lastSavedAt = null;
+    }
+  }
+
+  return { productCount, orderCount, heldCount, lastSavedAt };
+}
+
+export async function exportStorageSnapshot(): Promise<StorageSnapshot> {
+  const [products, sales, heldSales, settingsRows, session] = await Promise.all([
+    getCustomProducts(),
+    db.sales.orderBy("createdAt").toArray(),
+    getHeldSales(),
+    db.settings.toArray(),
+    loadPosSession(),
+  ]);
+
+  const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
+
+  return {
+    version: 1,
+    exportedAt: Date.now(),
+    products,
+    sales,
+    heldSales,
+    settings,
+    session,
+  };
+}
+
+export async function importStorageSnapshot(snapshot: StorageSnapshot): Promise<void> {
+  if (snapshot.version !== 1) {
+    throw new Error("Unsupported backup version.");
+  }
+
+  await db.transaction("rw", db.products, db.sales, db.heldSales, db.settings, async () => {
+    await db.products.clear();
+    await db.sales.clear();
+    await db.heldSales.clear();
+    await db.settings.clear();
+
+    if (snapshot.products.length > 0) {
+      await db.products.bulkPut(
+        snapshot.products.map((product, index) => ({
+          ...product,
+          createdAt: Date.now() + index,
+        })),
+      );
+    }
+
+    if (snapshot.sales.length > 0) {
+      await db.sales.bulkPut(snapshot.sales);
+    }
+
+    if (snapshot.heldSales.length > 0) {
+      await db.heldSales.bulkPut(snapshot.heldSales);
+    }
+
+    for (const [key, value] of Object.entries(snapshot.settings)) {
+      await db.settings.put({ key, value });
+    }
+
+    if (snapshot.session) {
+      await savePosSession(snapshot.session);
+    }
+  });
+
+  await loadBarcodeSequenceFromDb();
 }

@@ -8,6 +8,7 @@ import {
   requestCameraPermission,
   type CameraPermission,
 } from "@/lib/camera-utils";
+import { normalizeScannedBarcode } from "@/lib/barcode-utils";
 
 interface UseWebcamBarcodeOptions {
   active: boolean;
@@ -59,7 +60,7 @@ export function useWebcamBarcode({
           (result) => {
             if (!result) return;
 
-            const code = result.getText().trim();
+            const code = normalizeScannedBarcode(result.getText());
             if (!code) return;
 
             const now = Date.now();

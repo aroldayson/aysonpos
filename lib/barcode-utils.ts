@@ -66,3 +66,43 @@ export function assignProductBarcode(existingBarcodes: string[], barcode: string
 export function isValidProductBarcode(barcode: string): boolean {
   return /^9300601\d{6}$/.test(barcode.trim());
 }
+
+/** Clean raw scanner / webcam input. */
+export function normalizeScannedBarcode(raw: string): string {
+  return raw
+    .trim()
+    .replace(/[\x00-\x1F\x7F]/g, "")
+    .replace(/\s+/g, "");
+}
+
+/** Keys to try when matching a scanned code to a stored product barcode. */
+export function getBarcodeLookupKeys(raw: string): string[] {
+  const keys = new Set<string>();
+  const normalized = normalizeScannedBarcode(raw);
+  if (!normalized) return [];
+
+  keys.add(normalized);
+
+  const withoutSymbology = normalized.replace(/^\][A-Za-z0-9]{3}/, "");
+  if (withoutSymbology) keys.add(withoutSymbology);
+
+  const digits = normalized.replace(/\D/g, "");
+  if (digits) {
+    keys.add(digits);
+    if (digits.startsWith(CUSTOM_BARCODE_PREFIX)) {
+      if (digits.length === 13) {
+        keys.add(digits);
+      }
+      if (digits.length > 13) {
+        keys.add(digits.slice(0, 13));
+      }
+    }
+  }
+
+  return [...keys].filter((key) => key.length >= 4);
+}
+
+export function barcodesMatch(stored: string, scanned: string): boolean {
+  const storedKeys = new Set(getBarcodeLookupKeys(stored));
+  return getBarcodeLookupKeys(scanned).some((key) => storedKeys.has(key));
+}

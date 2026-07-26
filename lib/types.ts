@@ -47,3 +47,30 @@ export interface SaleRecord {
 }
 
 export type KeypadMode = "qty" | "cash";
+
+export interface PosSession {
+  items: CartItem[];
+  selectedItemId: string | null;
+  cashTendered: number;
+  keypadValue: string;
+  keypadMode: KeypadMode;
+  category: CategoryId;
+  updatedAt: number;
+}
+
+export interface StorageSummary {
+  productCount: number;
+  orderCount: number;
+  heldCount: number;
+  lastSavedAt: number | null;
+}
+
+export interface StorageSnapshot {
+  version: 1;
+  exportedAt: number;
+  products: Product[];
+  sales: SaleRecord[];
+  heldSales: HeldSale[];
+  settings: Record<string, string>;
+  session: PosSession | null;
+}

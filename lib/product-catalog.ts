@@ -1,6 +1,6 @@
 import type { CategoryId, Product } from "./types";
 import { DEFAULT_PRODUCTS } from "./products";
-import { peekBarcodeAtOffset } from "./barcode-utils";
+import { barcodesMatch, peekBarcodeAtOffset } from "./barcode-utils";
 
 export interface NewProductInput {
   name: string;
@@ -22,8 +22,7 @@ export function mergeProducts(customProducts: Product[]): Product[] {
 }
 
 export function findInCatalog(products: Product[], barcode: string): Product | undefined {
-  const normalized = barcode.trim();
-  return products.find((p) => p.barcode === normalized);
+  return products.find((product) => barcodesMatch(product.barcode, barcode));
 }
 
 export function filterByCategory(products: Product[], categoryId: CategoryId): Product[] {
