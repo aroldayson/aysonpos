@@ -1,6 +1,7 @@
 "use client";
 
 import { useWebcamBarcode } from "./useWebcamBarcode";
+import { ScannerVideoFrame } from "./ScannerVideoFrame";
 
 interface WebcamScanPanelProps {
   active: boolean;
@@ -36,7 +37,7 @@ export function WebcamScanPanel({ active, onScan, onClose }: WebcamScanPanelProp
             }`}
           />
           <span className="text-xs font-bold uppercase tracking-wide text-white">
-            Webcam Scanner
+            Camera Scanner
           </span>
           {isConnected && (
             <span className="text-xs font-bold text-emerald-300">Live</span>
@@ -52,25 +53,23 @@ export function WebcamScanPanel({ active, onScan, onClose }: WebcamScanPanelProp
       </div>
 
       <div className="flex flex-col gap-3 px-3 pb-3 sm:flex-row">
-        <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-black sm:max-w-xs">
-          <video
-            ref={videoRef}
-            className="h-full w-full object-cover"
-            muted
-            playsInline
-            autoPlay
-          />
+        <ScannerVideoFrame
+          videoRef={videoRef}
+          active={active}
+          isConnected={isConnected}
+          className="sm:max-w-xs"
+        >
           {needsPermission && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80 p-4">
               <p className="text-center text-sm text-slate-100">
-                Allow camera access to scan barcodes with your webcam
+                Allow camera access to scan barcodes with your phone
               </p>
               <button
                 type="button"
                 onClick={connectWebcam}
                 className="min-h-11 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white active:bg-emerald-500"
               >
-                Connect Webcam
+                Allow Camera
               </button>
             </div>
           )}
@@ -79,19 +78,15 @@ export function WebcamScanPanel({ active, onScan, onClose }: WebcamScanPanelProp
               Connecting…
             </div>
           )}
-          {isConnected && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <div className="h-20 w-40 rounded border-2 border-emerald-400/90 sm:h-24 sm:w-48" />
-            </div>
-          )}
-        </div>
+        </ScannerVideoFrame>
 
         <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
           {error && <p className="text-sm text-red-400">{error}</p>}
 
           {!error && isConnected && (
             <p className="text-sm text-slate-100">
-              Hold the barcode up to your webcam. Items are added automatically.
+              Hold the barcode in the green box. Rotate your phone — the camera adjusts
+              automatically.
             </p>
           )}
 

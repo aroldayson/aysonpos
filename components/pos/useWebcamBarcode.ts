@@ -4,11 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
 import {
   getCameraPermission,
+  getScannerVideoConstraints,
+  isMobileDevice,
   pickDefaultCamera,
   requestCameraPermission,
   type CameraPermission,
 } from "@/lib/camera-utils";
 import { normalizeScannedBarcode } from "@/lib/barcode-utils";
+import { useDeviceOrientation } from "./useDeviceOrientation";
 
 interface UseWebcamBarcodeOptions {
   active: boolean;
@@ -25,6 +28,7 @@ export function useWebcamBarcode({
   const controlsRef = useRef<IScannerControls | null>(null);
   const lastScanRef = useRef<{ code: string; at: number } | null>(null);
   const onScanRef = useRef(onScan);
+  const { angle: orientationAngle } = useDeviceOrientation();
 
   const [permission, setPermission] = useState<CameraPermission>("prompt");
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
@@ -52,10 +56,11 @@ export function useWebcamBarcode({
       setError(null);
 
       const reader = new BrowserMultiFormatReader();
+      const constraints = getScannerVideoConstraints(deviceId || undefined);
 
       try {
-        const controls = await reader.decodeFromVideoDevice(
-          deviceId,
+        const controls = await reader.decodeFromConstraints(
+          constraints,
           videoRef.current,
           (result) => {
             if (!result) return;
@@ -76,8 +81,33 @@ export function useWebcamBarcode({
         controlsRef.current = controls;
         setStatus("scanning");
       } catch {
+        if (deviceId && !isMobileDevice()) {
+          try {
+            const fallback = await reader.decodeFromVideoDevice(
+              deviceId,
+              videoRef.current,
+              (result) => {
+                if (!result) return;
+                const code = normalizeScannedBarcode(result.getText());
+                if (!code) return;
+                const now = Date.now();
+                const last = lastScanRef.current;
+                if (last && last.code === code && now - last.at < debounceMs) return;
+                lastScanRef.current = { code, at: now };
+                setLastScanned(code);
+                onScanRef.current(code);
+              },
+            );
+            controlsRef.current = fallback;
+            setStatus("scanning");
+            return;
+          } catch {
+            // fall through
+          }
+        }
+
         setStatus("error");
-        setError("Could not start webcam scanner.");
+        setError("Could not start camera scanner.");
       }
     },
     [debounceMs, stopScanner],
@@ -95,7 +125,7 @@ export function useWebcamBarcode({
       const preferred = pickDefaultCamera(videoDevices);
       if (!preferred) {
         setStatus("error");
-        setError("No webcam found. Plug in a camera and try again.");
+        setError("No camera found. Check permissions and try again.");
         return;
       }
 
@@ -103,7 +133,7 @@ export function useWebcamBarcode({
     } catch {
       setPermission("denied");
       setStatus("error");
-      setError("Camera access denied. Allow webcam permission in your browser settings.");
+      setError("Camera access denied. Allow camera permission in your browser settings.");
     }
   }, []);
 
@@ -123,7 +153,7 @@ export function useWebcamBarcode({
           if (preferred) setSelectedDeviceId(preferred.deviceId);
         } catch {
           setStatus("error");
-          setError("Could not access webcam.");
+          setError("Could not access camera.");
         }
       }
     });
@@ -132,10 +162,15 @@ export function useWebcamBarcode({
   }, [active, stopScanner]);
 
   useEffect(() => {
-    if (!active || !selectedDeviceId || permission !== "granted") return;
-    startScanner(selectedDeviceId);
-    return () => stopScanner();
-  }, [active, selectedDeviceId, permission, startScanner, stopScanner]);
+    if (!active || permission !== "granted") return;
+    if (!isMobileDevice() && !selectedDeviceId) return;
+
+    const timer = window.setTimeout(() => {
+      void startScanner(selectedDeviceId);
+    }, orientationAngle === 0 ? 0 : 350);
+
+    return () => window.clearTimeout(timer);
+  }, [active, selectedDeviceId, permission, orientationAngle, startScanner]);
 
   return {
     videoRef,

@@ -1,5 +1,42 @@
 export type CameraPermission = "prompt" | "granted" | "denied" | "unsupported";
 
+export function isMobileDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
+export function getScannerVideoConstraints(deviceId?: string): MediaStreamConstraints {
+  if (deviceId) {
+    return {
+      audio: false,
+      video: {
+        deviceId: { exact: deviceId },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+    };
+  }
+
+  if (isMobileDevice()) {
+    return {
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+    };
+  }
+
+  return {
+    audio: false,
+    video: {
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+    },
+  };
+}
+
 export async function getCameraPermission(): Promise<CameraPermission> {
   if (!navigator.mediaDevices?.getUserMedia) return "unsupported";
 
@@ -12,9 +49,7 @@ export async function getCameraPermission(): Promise<CameraPermission> {
 }
 
 export async function requestCameraPermission(): Promise<MediaDeviceInfo[]> {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-  });
+  const stream = await navigator.mediaDevices.getUserMedia(getScannerVideoConstraints());
 
   stream.getTracks().forEach((track) => track.stop());
 
