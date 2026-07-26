@@ -61,6 +61,7 @@ export function PosSystem() {
   const [mobileView, setMobileView] = useState<MobileView>("products");
   const prevCartCount = useRef(0);
   const sessionRestoredRef = useRef(false);
+  const qtyReplacePendingRef = useRef(false);
 
   const products = getProductsByCategory(category);
   const subtotal = calcSubtotal(items);
@@ -203,11 +204,42 @@ export function PosSystem() {
   useBarcodeInput({ enabled: dbReady, onScan: handleBarcodeScan });
 
   const handleDigit = (digit: string) => {
+    if (digit === "." && keypadMode === "qty") return;
     if (digit === "." && keypadValue.includes(".")) return;
+
+    if (keypadMode === "qty" && qtyReplacePendingRef.current) {
+      qtyReplacePendingRef.current = false;
+      if (digit === ".") return;
+      setKeypadValue(digit);
+      return;
+    }
+
     setKeypadValue((prev) => (prev === "0" && digit !== "." ? digit : prev + digit));
   };
 
-  const handleKeypadClear = () => setKeypadValue("");
+  const handleKeypadClear = () => {
+    qtyReplacePendingRef.current = false;
+    setKeypadValue("");
+  };
+
+  const handleEditQuantity = useCallback(
+    (id: string) => {
+      const item = items.find((entry) => entry.id === id);
+      if (!item) return;
+
+      setSelectedItemId(id);
+      setKeypadMode("qty");
+      setKeypadValue(String(item.quantity));
+      qtyReplacePendingRef.current = true;
+
+      if (typeof window !== "undefined" && window.innerWidth < 1024) {
+        setMobileView("pay");
+      }
+
+      showToast(`Edit qty: ${item.name}`);
+    },
+    [items, showToast],
+  );
 
   const handleKeypadEnter = () => {
     if (keypadMode === "cash") {
@@ -221,13 +253,17 @@ export function PosSystem() {
       const qty = Math.max(1, Math.floor(parseFloat(keypadValue) || 1));
       setItems((prev) => setCartItemQuantity(prev, selectedItemId, qty));
       setKeypadValue("");
+      qtyReplacePendingRef.current = false;
       showToast("Quantity updated");
+    } else if (selectedItemId && keypadMode === "qty") {
+      showToast("Enter a quantity first");
     }
   };
 
   const handleIncreaseQuantity = (id: string) => {
     setItems((prev) => adjustCartItemQuantity(prev, id, 1));
     setSelectedItemId(id);
+    qtyReplacePendingRef.current = false;
   };
 
   const handleDecreaseQuantity = (id: string) => {
@@ -422,8 +458,11 @@ export function PosSystem() {
         <OrderPanel
           items={items}
           selectedItemId={selectedItemId}
+          keypadMode={keypadMode}
+          keypadValue={keypadValue}
           cashTendered={cashTendered}
           onSelectItem={setSelectedItemId}
+          onEditQuantity={handleEditQuantity}
           onClearSelection={() => setSelectedItemId(null)}
           onIncreaseQuantity={handleIncreaseQuantity}
           onDecreaseQuantity={handleDecreaseQuantity}
@@ -443,6 +482,7 @@ export function PosSystem() {
         <KeypadPanel
           keypadValue={keypadValue}
           keypadMode={keypadMode}
+          selectedItemId={selectedItemId}
           onKeypadModeChange={setKeypadMode}
           onDigit={handleDigit}
           onClear={handleKeypadClear}

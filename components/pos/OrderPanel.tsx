@@ -6,8 +6,11 @@ import { calcSubtotal, formatCurrency } from "@/lib/pos-utils";
 interface OrderPanelProps {
   items: CartItem[];
   selectedItemId: string | null;
+  keypadMode: "qty" | "cash";
+  keypadValue: string;
   cashTendered: number;
   onSelectItem: (id: string) => void;
+  onEditQuantity: (id: string) => void;
   onClearSelection: () => void;
   onIncreaseQuantity: (id: string) => void;
   onDecreaseQuantity: (id: string) => void;
@@ -18,8 +21,11 @@ interface OrderPanelProps {
 export function OrderPanel({
   items,
   selectedItemId,
+  keypadMode,
+  keypadValue,
   cashTendered,
   onSelectItem,
+  onEditQuantity,
   onClearSelection,
   onIncreaseQuantity,
   onDecreaseQuantity,
@@ -91,9 +97,20 @@ export function OrderPanel({
                       >
                         −
                       </button>
-                      <span className="min-w-8 text-center text-base font-bold text-slate-900">
-                        {item.quantity}
-                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Edit quantity of ${item.name}`}
+                        onClick={() => onEditQuantity(item.id)}
+                        className={`pos-btn min-w-10 rounded-lg px-2 py-1 text-center text-base font-bold transition-all ${
+                          isSelected && keypadMode === "qty"
+                            ? "bg-indigo-600 text-white ring-2 ring-indigo-300"
+                            : "bg-white text-slate-900 ring-1 ring-slate-200 hover:bg-indigo-50"
+                        }`}
+                      >
+                        {isSelected && keypadMode === "qty" && keypadValue
+                          ? keypadValue
+                          : item.quantity}
+                      </button>
                       <button
                         type="button"
                         aria-label={`Increase quantity of ${item.name}`}
@@ -140,7 +157,12 @@ export function OrderPanel({
             </>
           )}
         </div>
-        {selectedItemId && (
+        {selectedItemId && keypadMode === "qty" && (
+          <p className="mt-3 text-center text-xs font-medium text-indigo-600">
+            Type quantity on keypad · Enter to apply
+          </p>
+        )}
+        {selectedItemId && keypadMode !== "qty" && (
           <button
             type="button"
             onClick={onClearSelection}

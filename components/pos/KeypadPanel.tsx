@@ -5,6 +5,7 @@ import type { KeypadMode } from "@/lib/types";
 interface KeypadPanelProps {
   keypadValue: string;
   keypadMode: KeypadMode;
+  selectedItemId: string | null;
   onKeypadModeChange: (mode: KeypadMode) => void;
   onDigit: (digit: string) => void;
   onClear: () => void;
@@ -23,6 +24,7 @@ const KEYPAD = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "C", "0", "."];
 export function KeypadPanel({
   keypadValue,
   keypadMode,
+  selectedItemId,
   onKeypadModeChange,
   onDigit,
   onClear,
@@ -59,6 +61,11 @@ export function KeypadPanel({
         <div className="rounded-xl bg-black/40 px-4 py-3 text-right font-mono text-2xl font-bold tracking-wider text-emerald-400">
           {keypadValue || "0"}
         </div>
+        {keypadMode === "qty" && selectedItemId && (
+          <p className="mt-2 text-center text-xs font-medium text-indigo-200">
+            Editing item quantity
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-1.5 p-3">
