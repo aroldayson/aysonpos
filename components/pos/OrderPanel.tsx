@@ -15,6 +15,9 @@ interface OrderPanelProps {
   onIncreaseQuantity: (id: string) => void;
   onDecreaseQuantity: (id: string) => void;
   onRemoveItem: (id: string) => void;
+  showPaymentActions?: boolean;
+  onCompletePayment?: () => void;
+  onEnterCash?: () => void;
   className?: string;
 }
 
@@ -30,6 +33,9 @@ export function OrderPanel({
   onIncreaseQuantity,
   onDecreaseQuantity,
   onRemoveItem,
+  showPaymentActions = false,
+  onCompletePayment,
+  onEnterCash,
   className = "",
 }: OrderPanelProps) {
   const subtotal = calcSubtotal(items);
@@ -157,6 +163,42 @@ export function OrderPanel({
             </>
           )}
         </div>
+
+        {showPaymentActions && items.length > 0 && (
+          <div className="mt-4 space-y-2">
+            {cashTendered <= 0 ? (
+              <button
+                type="button"
+                onClick={onEnterCash}
+                className="pos-btn w-full min-h-12 rounded-xl bg-indigo-600 text-base font-bold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-500"
+              >
+                Enter Cash Amount
+              </button>
+            ) : cashTendered >= subtotal ? (
+              <button
+                type="button"
+                onClick={onCompletePayment}
+                className="pos-btn w-full min-h-12 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-base font-black uppercase tracking-wide text-white shadow-lg shadow-emerald-200"
+              >
+                Complete Payment
+              </button>
+            ) : (
+              <>
+                <p className="text-center text-sm font-medium text-amber-700">
+                  Need {formatCurrency(subtotal - cashTendered)} more cash
+                </p>
+                <button
+                  type="button"
+                  onClick={onEnterCash}
+                  className="pos-btn w-full min-h-11 rounded-xl bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500"
+                >
+                  Update Cash Amount
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         {selectedItemId && keypadMode === "qty" && (
           <p className="mt-3 text-center text-xs font-medium text-indigo-600">
             Type quantity on keypad · Enter to apply

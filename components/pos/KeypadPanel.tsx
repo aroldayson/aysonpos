@@ -1,12 +1,15 @@
 "use client";
 
 import type { KeypadMode } from "@/lib/types";
+import { calcChange, formatCurrency } from "@/lib/pos-utils";
 
 interface KeypadPanelProps {
   keypadValue: string;
   keypadMode: KeypadMode;
   selectedItemId: string | null;
   pendingManualProductName?: string | null;
+  subtotal?: number;
+  cashTendered?: number;
   onKeypadModeChange: (mode: KeypadMode) => void;
   onDigit: (digit: string) => void;
   onClear: () => void;
@@ -27,6 +30,8 @@ export function KeypadPanel({
   keypadMode,
   selectedItemId,
   pendingManualProductName,
+  subtotal = 0,
+  cashTendered = 0,
   onKeypadModeChange,
   onDigit,
   onClear,
@@ -74,6 +79,24 @@ export function KeypadPanel({
           <p className="mt-2 text-center text-xs font-medium text-amber-200">
             Enter price for {pendingManualProductName}
           </p>
+        )}
+        {keypadMode === "cash" && subtotal > 0 && (
+          <div className="mt-2 space-y-1 rounded-lg bg-black/30 px-3 py-2 text-sm">
+            <div className="flex justify-between text-slate-200">
+              <span>Total bill</span>
+              <span className="font-bold text-white">{formatCurrency(subtotal)}</span>
+            </div>
+            {(parseFloat(keypadValue) > 0 || cashTendered > 0) && (
+              <div className="flex justify-between text-emerald-200">
+                <span>Change</span>
+                <span className="font-bold">
+                  {formatCurrency(
+                    calcChange(subtotal, parseFloat(keypadValue) || cashTendered),
+                  )}
+                </span>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
